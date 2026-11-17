@@ -1,4 +1,4 @@
-name: WR1300E v2 - OpenWrt 25.12.6 - Fix official kernel ABI
+name: WR1300E v2 - OpenWrt 25.12.6 - ABI V3 complete feeds
 on:
   workflow_dispatch:
 permissions:
@@ -23,12 +23,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: WR1300E_ABI_FIX_V2_diagnostics
+          name: WR1300E_ABI_FIX_V3_diagnostics
           path: |
             defconfig.log
             effective.config
             official_config.buildinfo
             feeds-revisions.txt
+            feeds-install.log
+            installed-feed-package-links.txt
+            kernel-kconfig-diff-v2.json
             kernel-config.set
             kernel-vermagic.txt
             early-abi-result.json
@@ -40,7 +43,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: WR1300E_v2_25.12.6_OFFICIAL_ABI_UNTESTED
+          name: WR1300E_v2_25.12.6_V3_OFFICIAL_ABI_UNTESTED
           path: |
             openwrt/bin/targets/ramips/mt7621/*cudy_wr1300e-v2*squashfs-sysupgrade.bin
             openwrt/bin/targets/ramips/mt7621/profiles.json
