@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+// WR1300E v2 board overlay reconstructed from prior build specifications.
+// UNTESTED on physical hardware. Verify board, GPIO, Wi-Fi and port mapping.
+#include "mt7621_cudy_wr1300-v2v3.dtsi"
+
+/ {
+	compatible = "cudy,wr1300e-v2", "mediatek,mt7621-soc";
+	model = "Cudy WR1300E v2";
+};
+
+/* WR1300E uses two LAN connectors on switch ports 2 and 3. */
+&switch0 {
+	ports {
+		port@1 {
+			status = "disabled";
+		};
+		port@2 {
+			label = "lan2";
+		};
+		port@3 {
+			label = "lan1";
+		};
+		port@4 {
+			status = "disabled";
+		};
+	};
+};
+
+/* Unlike WR1300 v2, the two radios are connected in the reverse order. */
+&pcie0 {
+	wifi@0,0 {
+		compatible = "mediatek,mt76";
+		reg = <0x0000 0 0 0 0>;
+		nvmem-cells = <&eeprom_factory_0>, <&macaddr_bdinfo_de00 0>;
+		nvmem-cell-names = "eeprom", "mac-address";
+		ieee80211-freq-limit = <2400000 2500000>;
+	};
+};
+
+&pcie1 {
+	wifi@0,0 {
+		compatible = "mediatek,mt76";
+		reg = <0x0000 0 0 0 0>;
+		nvmem-cells = <&eeprom_factory_8000>, <&macaddr_bdinfo_de00 2>;
+		nvmem-cell-names = "eeprom", "mac-address";
+		ieee80211-freq-limit = <5000000 6000000>;
+	};
+};
