@@ -1,81 +1,77 @@
-# Cudy WR1300E v2 — исправленная сборка OpenWrt 25.12.6 (попытка №2)
+# Cudy WR1300E v2 — сборка OpenWrt 25.12.6, ABI V3
 
-## Диагностика предыдущей попытки
+## Зачем V3
 
-`WR1300E_build_diagnostics.zip` показал: сборка завершила компиляцию образа,
-но сравнение ABI завершилось ошибкой (`c6e498a9f9e2504551704be0f9004211`
-вместо официального `aa81475ddbdbcc69877f69037ae40cd8`).
+В отчёте V2 `early-abi-result.json` фактический `.vermagic` равен
+`c479569322c3e45f042ca22dd188c1ac` вместо официального
+`aa81475ddbdbcc69877f69037ae40cd8`.
+При этом `CONFIG_BUILDBOT=y`, `CONFIG_ALL_KMODS=y`, `CONFIG_TARGET_MULTI_PROFILE=y`
+и остальная основа `config.buildinfo` уже совпадали с официальными флагами.
 
-Причина в предыдущем `create_config.py`: вместо полного официального `config.buildinfo`
-он оставлял только часть настроек, менял режим многопрофильной сборки на single-profile,
-выключал `CONFIG_BUILDBOT`, `CONFIG_ALL_NONSHARED`, `CONFIG_COLLECT_KERNEL_DEBUG`,
-`CONFIG_TARGET_PER_DEVICE_ROOTFS` и другие флаги сборочного сервера.
-В OpenWrt `vermagic` зависит от сгенерированного Kconfig ядра, а не только от версии Linux.
+**Главный недостаток V2:** `scripts/feeds install` явно запрашивал лишь пять пакетов
+из feeds (плюс их зависимости), но не импортировал определения остальных. Это не позволяет гарантировать идентичную генерацию Kconfig ядра:
+при `CONFIG_ALL_KMODS=y` доступные определения kmod-пакетов могут влиять на
+список `CONFIG_*=m` и, следовательно, на `.vermagic`.
+Это обоснованная техническая гипотеза о причине отличия, а не подтверждённое
+совпадение с конфигурацией официального buildbot.
 
-## Что изменено
+## Что делает V3
 
-1. Используется **полный** официальный `config.buildinfo` от `ramips/mt7621`,
-   проверяется его SHA256.
-2. Добавляется только новый профиль в формате `CONFIG_TARGET_DEVICE_...=y`,
-   без выбора `CONFIG_TARGET_ramips_mt7621_DEVICE_...` (single-profile).
-3. Сохраняются `BUILDBOT`, `ALL_NONSHARED`, `ALL_KMODS`, `COLLECT_KERNEL_DEBUG`,
-   `TARGET_ALL_PROFILES`, `TARGET_PER_DEVICE_ROOTFS` и `KERNEL_KALLSYMS=n`.
-4. Чтобы не создавать сотни прошивок, патчится **только механизм отбора выходных образов**
-   (`include/image.mk`). Конфигурация ядра не изменяется намеренно.
-5. Сначала собирается ядро и сравнивается его фактический `.vermagic` с официальным.
-   При несовпадении выполнение прекращается, все диагностические файлы сохраняются.
-6. В прошивке остаются штатные пакеты OpenWrt и LuCI. AmneziaWG, PBR, Podkop,
-   EasyTier и другие сторонние модули НЕ добавляются.
+1. Берёт строго `v25.12.6` из официальных исходников OpenWrt.
+2. Добавляет реконструированный профиль Cudy WR1300E v2 (на реальном
+   аппаратном экземпляре **не проверен**).
+3. Обновляет **все feeds** из закреплённых в OpenWrt release commits и
+   устанавливает **все определения пакетов**, как ожидается от полной сборки.
+4. Исправляет только известную циклическую зависимость `luci-app-weechat`,
+   если она обнаружена в `package/feeds/luci/luci-app-weechat/Makefile`.
+   К списку включённых Linux CONFIG_*=y/m напрямую это исправление не относится.
+5. Сохраняет **все** 647 строк официального `config.buildinfo` и проверяет SHA-256.
+6. Компилирует ядро и сравнивает хеш ABI с официальным. Также создаёт
+   `kernel-kconfig-diff-v2.json` — отличие конфигурации ядра V3 от предыдущей V2,
+   **не** от оригинальной Linux Kconfig официального OpenWrt.
+7. Если ABI не совпадает, останавливается без публикации прошивки.
+   Если совпадает, собирает конечный образ и проверяет `profiles.json`,
+   размер, U-Boot-заголовок и CRC.
 
-**Осторожно:** пока нет результата новой GitHub Actions сборки, совпадение ABI
-не подтверждено. Даже совпавший hash сам по себе не означает тестирования роутера.
+## Состав прошивки
 
-## Запуск из нового или существующего GitHub-репозитория
+OpenWrt с LuCI, базовыми драйверами Wi-Fi, WAN/LAN, SSH, APK.
+AmneziaWG, PBR, Podkop, EasyTier и сторонний VPN-стек не включены.
+`ALL_KMODS=y` означает *сборку отдельных пакетов модулей*, а не их
+автоматическое включение в rootfs. Но полный режим buildbot существенно
+увеличивает количество компилируемых пакетов и может не уложиться в лимиты
+GitHub Actions. Даже успешная компиляция не подтверждает работоспособность железа.
 
-1. Загрузите содержимое ZIP в **корень репозитория**, заменив одноимённые файлы
-   (`.github/workflows/build.yml`, `build.sh`, `create_config.py` и т. п.).
-2. В GitHub откройте Actions → `WR1300E v2 - OpenWrt 25.12.6 - Fix official kernel ABI`
-   → Run workflow.
-3. Если сборка упадёт, скачайте `WR1300E_ABI_FIX_V2_diagnostics` и передайте архив
-   для анализа. Он содержит `early-abi-result.json`, `kernel-vermagic.txt` и
-   `kernel-config.set` (если сгенерирован).
-4. В случае успеха скачайте `WR1300E_v2_25.12.6_OFFICIAL_ABI_UNTESTED` и
-   проверьте `abi-result.json`: `matches_official_abi: true`.
+## Запуск в GitHub
 
-## После сборки и до установки прошивки
+1. Распакуйте архив и **замените содержимое** прежнего репозитория, включая
+   `.github/workflows/build.yml`.
+2. GitHub: **Commit changes**.
+3. Actions -> **WR1300E v2 - OpenWrt 25.12.6 - ABI V3 complete feeds**
+   -> **Run workflow**.
+4. При ошибке скачайте артефакт `WR1300E_ABI_FIX_V3_diagnostics` и передайте
+   сюда. Основное: `early-abi-result.json`, `kernel-kconfig-diff-v2.json`,
+   `defconfig.log`, `feeds-install.log`.
+5. При успехе артефакт `WR1300E_v2_25.12.6_V3_OFFICIAL_ABI_UNTESTED`
+   будет содержать `sysupgrade.bin`, `abi-result.json` и SHA256.
 
-- Убедиться, что модель — **Cudy WR1300E v2**, а не WR1300 v2/v3.
-- Сохранить резервные копии уникальных разделов `factory`, `bdinfo`, загрузчика,
-  параметры /etc, SSH/VPN-ключи **локально**, не публиковать их в GitHub.
-- Проверить `/proc/mtd`, `ubus call system board`, `sysupgrade -T` и метод
-  восстановления. **Не использовать `sysupgrade -F` без отдельной проверки.**
-- DTS модели из предыдущего комплекта реконструирован по исходным материалам;
-  аппаратная совместимость не подтверждена испытаниями.
+**Не прошивайте образ автоматически.** Использование полного списка
+официальных kmod-пакетов возможно только при действительном совпадении ABI
+и корректных источниках APK. Сначала необходимо проверить модель/ревизию,
+сделать локальные резервные копии `factory`, `bdinfo`, `u-boot`/`u-boot-env`
+(уникальные заводские данные и MAC), проверить `sysupgrade -T`, разметку MTD,
+а также восстановление через TFTP. Не используйте `sysupgrade -F` наугад.
+Не размещайте заводские дампы, SSH/VPN-ключи или пользовательские настройки
+в GitHub — даже в приватном репозитории это нежелательно.
 
-## APK после установки
+## Актуальные источники
 
-После аппаратно проверенной прошивки и подтверждённого ABI:
-
-```sh
-apk update
-apk add kmod-tun
-```
-
-Это пример загрузки официального модуля TUN, **не** инструкция прошивать
-непроверенный образ. AmneziaWG и прочие сторонние модули потребуют
-дополнительной проверки доступности в репозитории и совместимости.
-
-## Источники и механизм
-
-- OpenWrt 25.12.6 `config.buildinfo`:
+- Официальный OpenWrt 25.12.6 для `ramips/mt7621`:
+  https://downloads.openwrt.org/releases/25.12.6/targets/ramips/mt7621/
+- Официальный seed конфигурации:
   https://downloads.openwrt.org/releases/25.12.6/targets/ramips/mt7621/config.buildinfo
-- Официальные APK пакеты:
-  https://downloads.openwrt.org/releases/25.12.6/targets/ramips/mt7621/kmods/
-- Расчёт `.vermagic` (`grep '=[ym]' | sort | md5`):
+- Генерация vermagic (grep CONFIG_*=y/m, сортировка, MD5):
   https://git.openwrt.org/openwrt/openwrt/tree/include/kernel-defaults.mk?h=v25.12.6
 
-## Состав репозитория
-
-`build.sh`, `create_config.py`, `limit_images.py`, `check_early_abi.py`,
-`check_abi.py`, `verify_image.py`, `apply_wr1300e.py`, `device/...dts`,
-`.github/workflows/build.yml`, `README_RU.md`.
+После каждого последующего обновления OpenWrt версия ядра и hash
+могут измениться. Эти скрипты специально закреплены за **25.12.6**.

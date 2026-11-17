@@ -16,10 +16,21 @@ fi
 python3 "$HERE/apply_wr1300e.py" "$SRC"
 cd "$SRC"
 
-# Match official feed revisions. Avoid "feeds install -a" (prior Kconfig cycles).
+# Kernel .vermagic hashes the ACTUAL Linux CONFIG_*=y/m options.
+# CONFIG_ALL_KMODS=y can only reproduce the official buildbot module selection
+# when ALL pinned feeds are *installed*, not merely downloaded. V2 installed
+# 5 packages; that omitted many optional kmod definitions and dependencies.
 ./scripts/feeds update -a
-./scripts/feeds install luci luci-ssl luci-app-package-manager luci-app-attendedsysupgrade owut
-./scripts/feeds list -r > "$HERE/feeds-revisions.txt" || true
+for d in feeds/*; do
+    if [ -d "$d/.git" ]; then
+        printf '%s %s\n' "${d#feeds/}" "$(git -C "$d" rev-parse HEAD)"
+    fi
+done > "$HERE/feeds-revisions.txt"
+./scripts/feeds install -a 2>&1 | tee "$HERE/feeds-install.log"
+python3 "$HERE/fix_weechat.py" "$SRC"
+find package/feeds -type l | LC_ALL=C sort > "$HERE/installed-feed-package-links.txt"
+printf 'Installed feed package links: '
+wc -l < "$HERE/installed-feed-package-links.txt"
 
 curl --fail --location --retry 3 --silent --show-error \
     "$BASE/config.buildinfo" -o "$HERE/official_config.buildinfo"
@@ -58,11 +69,8 @@ if grep -Eq '^CONFIG_PACKAGE_(kmod-amneziawg|amneziawg-tools|pbr|luci-app-pbr|po
 fi
 cp .config "$HERE/effective.config"
 
-# Limit only the OUTPUT IMAGES, leaving all official buildbot device/kernel
-# symbols in .config. This reduces generation of ~289 unneeded firmware files.
-python3 "$HERE/limit_images.py" "$SRC/include/image.mk"
-
 # Build kernel first and report ABI mismatch BEFORE full image/package phase.
+# Do not alter OpenWrt image makefiles until the ABI check succeeds.
 # Explicitly build host tools and cross-toolchain before the kernel target.
 make download -j4
 make -j2 tools/install V=s
@@ -82,9 +90,16 @@ VERMAGIC_FILE="${VERMAGIC_FILES[0]}"
 cp "$VERMAGIC_FILE" "$HERE/kernel-vermagic.txt"
 if [ -f "$(dirname "$VERMAGIC_FILE")/.config.set" ]; then
     cp "$(dirname "$VERMAGIC_FILE")/.config.set" "$HERE/kernel-config.set"
+    python3 "$HERE/compare_kconfig.py" \
+        "$HERE/reference/v2-kernel-config.set" \
+        "$HERE/kernel-config.set" \
+        "$HERE/kernel-kconfig-diff-v2.json"
 fi
 python3 "$HERE/check_early_abi.py" "$VERMAGIC_FILE" "$HERE/early-abi-result.json"
 
+# Restrict IMAGE OUTPUTS only after proving the official kernel ABI.
+# The package selections stay untouched (ALL_KMODS / ALL_NONSHARED).
+python3 "$HERE/limit_images.py" "$SRC/include/image.mk"
 # Only if the kernel ABI matches, finish the image build.
 make -j2 V=s
 IMG_DIR="bin/targets/ramips/mt7621"
