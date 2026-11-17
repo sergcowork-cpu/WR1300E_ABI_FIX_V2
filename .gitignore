@@ -1,0 +1,11 @@
+openwrt/
+*.log
+*.sha256
+abi-result.json
+official_config.buildinfo
+effective.config
+feeds-revisions.txt
+__pycache__/
+kernel-config.set
+kernel-vermagic.txt
+early-abi-result.json
